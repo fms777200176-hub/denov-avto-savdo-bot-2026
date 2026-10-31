@@ -11,7 +11,7 @@ from telegram.ext import (
 
 TOKEN = os.getenv("BOT_TOKEN")
 ADMIN_ID = 8545646821
-CHANNEL = "@denov_avto_savdo"
+CHANNEL = "@denov_avto_savdotest"
 
 MODEL, YEAR, PRICE, CURRENCY, DETAILS, HIDE_PLATE, PHOTOS, CONFIRM = range(8)
 
