@@ -180,8 +180,8 @@ async def main():
     await app.initialize()
     await app.start()
     await app.updater.start_polling()
-    await app.updater.wait_until_closed()
-
+    
+    await asyncio.Event().wait()
 
 if __name__ == "__main__":
     import asyncio
