@@ -35,10 +35,8 @@ MAIN_CHANNEL_URL = os.getenv(
     "CHANNEL_URL", "https://t.me/denov_avto_savdo"
 ).strip()
 
-# Test kanal: admin tasdiqlagan e'lonlar avval shu yerga tushadi
-POST_CHANNEL = os.getenv(
-    "POST_CHANNEL_ID", "@denov_avto_savdotest"
-).strip()
+# Tasdiqlangan e'lonlar to'g'ridan-to'g'ri asosiy kanalga joylanadi.
+POST_CHANNEL = MAIN_CHANNEL
 
 # Takliflar hisoblanadigan muhokama guruhi
 GROUP_ID = os.getenv("GROUP_ID", "@Denov_avto_savdo_chat").strip()
@@ -714,18 +712,18 @@ async def admin_decision(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 "UPDATE ads SET status='posted_test', channel_message_id=? WHERE id=?",
                 (msg_id, ad_id),
             )
-        await query.message.reply_text(f"✅ E’lon #{ad_id} test kanaliga joylandi.")
+        await query.message.reply_text(f"✅ E’lon #{ad_id} kanalimizga joylandi.")
         try:
             await context.bot.send_message(
                 ad["user_id"],
-                f"🎉 E’loningiz tasdiqlandi va test kanaliga joylandi!\n{MAIN_CHANNEL_URL}"
+                f"🎉 E’loningiz tasdiqlandi va kanalimizga joylandi!\n{MAIN_CHANNEL_URL}"
             )
         except TelegramError:
             pass
     except TelegramError as e:
         log.exception("Kanalga joylashda xato: %s", e)
         await query.message.reply_text(
-            "❌ Kanalga joylab bo‘lmadi. Bot test kanalida administrator ekanini va POST_CHANNEL_ID sozlamasini tekshiring."
+            "❌ Kanalga joylab bo‘lmadi. Bot asosiy kanalda administrator ekanini va POST_CHANNEL_ID sozlamasini tekshiring."
         )
 
 
@@ -747,8 +745,9 @@ async def menu_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
     if text == MENU_RULES:
+        context.user_data.pop("ad", None)
         await update.message.reply_text(rules_text(), reply_markup=main_menu())
-        return
+        return ConversationHandler.END
     if text == MENU_MY:
         with db() as con:
             rows = con.execute(
@@ -762,18 +761,22 @@ async def menu_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             for row in rows:
                 lines.append(f"#{row['id']} — {row['model']} — {row['status']}")
             await update.message.reply_text("\n".join(lines), reply_markup=main_menu())
-        return
+        context.user_data.pop("ad", None)
+        return ConversationHandler.END
     if text == MENU_ADMIN:
+        context.user_data.pop("ad", None)
         await update.message.reply_text(
             "👨‍💻 Administrator bilan bog‘lanish: @DAS_Admin",
             reply_markup=main_menu(),
         )
-        return
+        return ConversationHandler.END
 
     # Menyu tashqarisidagi oddiy xabarlar uchun foydalanuvchini yo'naltiramiz.
+    context.user_data.pop("ad", None)
     await update.message.reply_text(
         "👇 Kerakli bo‘limni menyudan tanlang.", reply_markup=main_menu()
     )
+    return ConversationHandler.END
 
 
 async def error_handler(update, context):
@@ -787,26 +790,29 @@ def main():
     init_db()
     app = Application.builder().token(BOT_TOKEN).build()
 
+    # Menyu tugmalari suhbatning har qanday bosqichida ishlasin.
+    active_menu = filters.Regex(r"^(❌ Bekor qilish|🚘 E’lon berish|📋 Mening e’lonlarim|📜 E’lon berish shartlari|👨‍💻 Admin bilan bog‘lanish)$")
     conv = ConversationHandler(
         entry_points=[MessageHandler(filters.Regex(r"^🚘 E’lon berish$"), begin_ad)],
         states={
-            MODEL: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_model)],
-            YEAR: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_year)],
-            POSITION: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_position)],
-            MILEAGE: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_mileage)],
-            FUEL: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_fuel)],
-            COLOR: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_color)],
-            PAINT: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_paint)],
-            PRICE: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_price)],
-            CURRENCY: [CallbackQueryHandler(get_currency, pattern=r"^currency_(UZS|USD)$")],
-            EXTRA: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_extra)],
-            LOCATION: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_location)],
-            PHONE: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_phone)],
+            MODEL: [MessageHandler(active_menu, menu_handler), MessageHandler(filters.TEXT & ~filters.COMMAND, get_model)],
+            YEAR: [MessageHandler(active_menu, menu_handler), MessageHandler(filters.TEXT & ~filters.COMMAND, get_year)],
+            POSITION: [MessageHandler(active_menu, menu_handler), MessageHandler(filters.TEXT & ~filters.COMMAND, get_position)],
+            MILEAGE: [MessageHandler(active_menu, menu_handler), MessageHandler(filters.TEXT & ~filters.COMMAND, get_mileage)],
+            FUEL: [MessageHandler(active_menu, menu_handler), MessageHandler(filters.TEXT & ~filters.COMMAND, get_fuel)],
+            COLOR: [MessageHandler(active_menu, menu_handler), MessageHandler(filters.TEXT & ~filters.COMMAND, get_color)],
+            PAINT: [MessageHandler(active_menu, menu_handler), MessageHandler(filters.TEXT & ~filters.COMMAND, get_paint)],
+            PRICE: [MessageHandler(active_menu, menu_handler), MessageHandler(filters.TEXT & ~filters.COMMAND, get_price)],
+            CURRENCY: [MessageHandler(active_menu, menu_handler), CallbackQueryHandler(get_currency, pattern=r"^currency_(UZS|USD)$")],
+            EXTRA: [MessageHandler(active_menu, menu_handler), MessageHandler(filters.TEXT & ~filters.COMMAND, get_extra)],
+            LOCATION: [MessageHandler(active_menu, menu_handler), MessageHandler(filters.TEXT & ~filters.COMMAND, get_location)],
+            PHONE: [MessageHandler(active_menu, menu_handler), MessageHandler(filters.TEXT & ~filters.COMMAND, get_phone)],
             PHOTOS: [
+                MessageHandler(active_menu, menu_handler),
                 MessageHandler(filters.PHOTO, get_photos),
                 MessageHandler(filters.TEXT & ~filters.COMMAND, get_photos),
             ],
-            REVIEW: [CallbackQueryHandler(user_ad_decision, pattern=r"^user(confirm|cancel)_\d+$")],
+            REVIEW: [MessageHandler(active_menu, menu_handler), CallbackQueryHandler(user_ad_decision, pattern=r"^user(confirm|cancel)_\d+$")],
         },
         fallbacks=[
             CommandHandler("cancel", cancel),
@@ -816,7 +822,6 @@ def main():
     )
 
     app.add_handler(CommandHandler("start", start))
-    app.add_handler(CommandHandler("cancel", cancel))
     app.add_handler(conv)
     app.add_handler(CallbackQueryHandler(check_access_button, pattern=r"^check_access$"))
     app.add_handler(CallbackQueryHandler(admin_decision, pattern=r"^admin(approve|reject)_\d+$"))
